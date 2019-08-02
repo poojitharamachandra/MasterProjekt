@@ -37,6 +37,10 @@ import time
 np.random.seed(42)
 
 import torch.nn as nn
+import wavenet as wave_voco
+import wavenet_model as wv
+import vq_vae as bottleneck
+from vq_vae import  batch_size ,num_hiddens ,num_residual_hiddens ,num_residual_layers ,embedding_dim ,num_embeddings,commitment_cost
 
 # Imports by Jinu
 #from python_speech_features import mfcc, fbank
@@ -44,11 +48,12 @@ from librosa.feature import mfcc
 import librosa.display as d
 
 
-class CNNModel(nn.Module):
+class WavenetModel(nn.Module):
 
     def __init__(self):
-        super(CNNModel, self).__init__()
-
+        super(WavenetModel, self).__init__()
+        # Poojitha Ramachandra
+        # ****************************encoder network *****************************************
         # Convolution 1
         self.cnn1 = nn.Conv1d(in_channels=13, out_channels=768, kernel_size=3, stride=1, padding=1)
         #self.relu1 = nn.ReLU()
@@ -78,9 +83,87 @@ class CNNModel(nn.Module):
         self.downsample = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=1, stride=1, padding=0)
 
         # Fully connected 1 (readout)
-        # 10 classes
+        # 30 classes
 
-        self.fc1 = nn.Linear(12288, 30)
+        self.fc1 = nn.Linear(2048, 30)
+        # ****************************encoder network *****************************************
+
+        # ****************************VQ-VAE network *****************************************
+
+        self.vq_vae= bottleneck.Model(num_hiddens, num_residual_layers, num_residual_hiddens,
+              num_embeddings, embedding_dim,
+              commitment_cost, decay =0.1)
+        # ****************************VQ-VAE network *****************************************
+
+
+
+        # Convolution 6
+        self.cnn6 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=1, stride=1, padding=0)
+
+
+        # ****************************wavenet model ******************************************
+
+        self.wavenet_model1 = wave_voco.WaveNet(
+                                    out_channels=128, layers=10, stacks=2,
+                                    residual_channels=512,
+                                    gate_channels=512,
+                                    skip_out_channels=512,
+                                    kernel_size=3, dropout=1 - 0.95,
+                                    cin_channels=-1, gin_channels=-1, n_speakers=None,
+                                    weight_normalization=True,
+                                    upsample_conditional_features=False,
+                                    upsample_scales=None,
+                                    freq_axis_kernel_size=3,
+                                    scalar_input=False,
+                                    use_speaker_embedding=False,
+                                    legacy=True,
+                                )
+
+
+        self.wavenet_model2 = wave_voco.WaveNet(
+                                    out_channels=128, layers=10, stacks=2,
+                                    residual_channels=512,
+                                    gate_channels=512,
+                                    skip_out_channels=512,
+                                    kernel_size=3, dropout=1 - 0.95,
+                                    cin_channels=-1, gin_channels=-1, n_speakers=None,
+                                    weight_normalization=True,
+                                    upsample_conditional_features=False,
+                                    upsample_scales=None,
+                                    freq_axis_kernel_size=3,
+                                    scalar_input=False,
+                                    use_speaker_embedding=False,
+                                    legacy=True,
+                                )
+
+        ''''' self.wavenet_model1 = wv.WaveNetModel(layers=10,
+                              blocks=1,
+                              dilation_channels=32,
+                              residual_channels=32,
+                              skip_channels=1024,
+                              end_channels=64,
+                              output_length=32,
+                              classes=128,
+                              dtype=torch.FloatTensor,
+                              bias=True)
+
+          self.wavenet_model2 = wv.WaveNetModel(layers=10,
+                              blocks=1,
+                              dilation_channels=32,
+                              residual_channels=32,
+                              skip_channels=1024,
+                              end_channels=64,
+                              output_length=32,
+                              classes=128,
+                              dtype=torch.FloatTensor,
+                              bias=True)'''''
+
+       # ****************************wavenet model ******************************************
+
+        self.relu5 = nn.ReLU()
+
+        self.relu6 = nn.ReLU()
+
         self.log_softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
@@ -101,6 +184,7 @@ class CNNModel(nn.Module):
         out = self.cnn5(out)
         res = out
         out += res
+
         out = self.relu1(out)
         res = out
         out += res
@@ -111,21 +195,42 @@ class CNNModel(nn.Module):
         res = out
         out += res
         out = self.relu4(out)
+
         #res = self.downsample(out)
         #out += res
-
+        #print("before vq-vae", out.size())
 
        # print("shape after cnn2: ", out.size())
-        # Resize
 
-        # Original size: (100, 32, 7, 7)
-        # out.size(0): 100
-        # New out size: (100, 32*7*7)
+        out = self.vq_vae(out)
+        #print("after vq-vae", out.size())
+
+        out = self.cnn6(out)
+
+        #print("after vq-vae",out.size())
+
+        #out = out.permute(1,0,2)
+        #out = out.permute(1,0,2)
+
+        out = self.wavenet_model1(out)
+
+        #res = out
+
+        out = self.wavenet_model2(out)
+
+        #out += res
+
+        out = self.relu5(out)
+
+        out = self.relu6(out)
+        #print("final sixe ====", out.size())
+
         out = out.contiguous().view(out.size(0), -1)
         #print("final sixe ====", out.size())
 
         # Linear function (readout)
-        out = self.fc1(out)
+        #out = self.fc1(out)
+
         out = self.log_softmax(out)
 
         return out
@@ -170,7 +275,7 @@ class Model(algorithm.Algorithm):
     # Turn it off as it leads to memory error
     #if torch.cuda.is_available(): self.pytorchmodel.cuda()
     #poojitha: call cnn model
-    self.pytorchmodel = CNNModel()
+    self.pytorchmodel = WavenetModel()
 
 
      # Attributes for managing time budget
