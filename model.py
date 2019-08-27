@@ -20,13 +20,15 @@ not exceed 300MB.
 Search for '# PYTORCH' to get directly to PyTorch Code.
 """
 
-
-
+from PIL import Image
+import matplotlib.pyplot as plt
+from scipy import signal
 import torch.utils.data as data_utils
 import torch
 import tensorflow as tf
 import os
 import numpy as np
+
 
 # Import the challenge algorithm (model) API from algorithm.py
 import algorithm
@@ -35,205 +37,74 @@ import algorithm
 import datetime
 import time
 np.random.seed(42)
-
+import sklearn.preprocessing
 import torch.nn as nn
-import wavenet as wave_voco
-import wavenet_model as wv
-import vq_vae as bottleneck
-from vq_vae import  batch_size ,num_hiddens ,num_residual_hiddens ,num_residual_layers ,embedding_dim ,num_embeddings,commitment_cost
+from  torchvision import transforms
 
 # Imports by Jinu
 #from python_speech_features import mfcc, fbank
 from librosa.feature import mfcc
+from librosa.feature import melspectrogram
 import librosa.display as d
+from torchvision import models
 
-
-class WavenetModel(nn.Module):
+class ResModel(nn.Module):
 
     def __init__(self):
-        super(WavenetModel, self).__init__()
-        # Poojitha Ramachandra
-        # ****************************encoder network *****************************************
-        # Convolution 1
-        self.cnn1 = nn.Conv1d(in_channels=13, out_channels=768, kernel_size=3, stride=1, padding=1)
-        #self.relu1 = nn.ReLU()
-        #self.maxpool1 = nn.MaxPool1d(kernel_size=2)
+        super(ResModel, self).__init__()
 
-        # Convolution 2
-        self.cnn2 = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=3, stride=1, padding=1)
+        self.cnn1 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=0)
+        self.cnn2 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=0)
+        self.cnn3 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=0)
+        self.cnn4 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=0)
+        self.relu = nn.ReLU()
+        self.maxpool = nn.MaxPool1d(kernel_size=2)
 
-
-
-        # Convolution 3(strided)
-        self.cnn3 = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=4, stride=2, padding=1)
-
-
-        # Convolution 4
-        self.cnn4 = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=3, stride=1, padding=1)
-        #self.relu2 = nn.ReLU()
-
-        # Convolution 5
-        self.cnn5 = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=3, stride=1, padding=1)
-
-        self.relu1 = nn.ReLU()
-        self.relu2 = nn.ReLU()
-        self.relu3 = nn.ReLU()
-        self.relu4 = nn.ReLU()
-
-        self.downsample = nn.Conv1d(in_channels=768, out_channels=768, kernel_size=1, stride=1, padding=0)
-
+        self.model = models.resnet50(pretrained=True)
         # Fully connected 1 (readout)
         # 30 classes
 
-        self.fc1 = nn.Linear(2048, 30)
-        # ****************************encoder network *****************************************
-
-        # ****************************VQ-VAE network *****************************************
-
-        self.vq_vae= bottleneck.Model(num_hiddens, num_residual_layers, num_residual_hiddens,
-              num_embeddings, embedding_dim,
-              commitment_cost, decay =0.1)
-        # ****************************VQ-VAE network *****************************************
-
-
-
-        # Convolution 6
-        self.cnn6 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=1, stride=1, padding=0)
-
-
-        # ****************************wavenet model ******************************************
-
-        self.wavenet_model1 = wave_voco.WaveNet(
-                                    out_channels=128, layers=10, stacks=2,
-                                    residual_channels=512,
-                                    gate_channels=512,
-                                    skip_out_channels=512,
-                                    kernel_size=3, dropout=1 - 0.95,
-                                    cin_channels=-1, gin_channels=-1, n_speakers=None,
-                                    weight_normalization=True,
-                                    upsample_conditional_features=False,
-                                    upsample_scales=None,
-                                    freq_axis_kernel_size=3,
-                                    scalar_input=False,
-                                    use_speaker_embedding=False,
-                                    legacy=True,
-                                )
-
-
-        self.wavenet_model2 = wave_voco.WaveNet(
-                                    out_channels=128, layers=10, stacks=2,
-                                    residual_channels=512,
-                                    gate_channels=512,
-                                    skip_out_channels=512,
-                                    kernel_size=3, dropout=1 - 0.95,
-                                    cin_channels=-1, gin_channels=-1, n_speakers=None,
-                                    weight_normalization=True,
-                                    upsample_conditional_features=False,
-                                    upsample_scales=None,
-                                    freq_axis_kernel_size=3,
-                                    scalar_input=False,
-                                    use_speaker_embedding=False,
-                                    legacy=True,
-                                )
-
-        ''''' self.wavenet_model1 = wv.WaveNetModel(layers=10,
-                              blocks=1,
-                              dilation_channels=32,
-                              residual_channels=32,
-                              skip_channels=1024,
-                              end_channels=64,
-                              output_length=32,
-                              classes=128,
-                              dtype=torch.FloatTensor,
-                              bias=True)
-
-          self.wavenet_model2 = wv.WaveNetModel(layers=10,
-                              blocks=1,
-                              dilation_channels=32,
-                              residual_channels=32,
-                              skip_channels=1024,
-                              end_channels=64,
-                              output_length=32,
-                              classes=128,
-                              dtype=torch.FloatTensor,
-                              bias=True)'''''
-
-       # ****************************wavenet model ******************************************
-
-        self.relu5 = nn.ReLU()
-
-        self.relu6 = nn.ReLU()
-
+        self.fc1 = nn.Linear(1000, 30)
+        #self.fc1 = nn.Linear(8640, 30)
         self.log_softmax = nn.LogSoftmax(dim=1)
-
     def forward(self, x):
-        # Convolution
-        #print("shape before cnn: ", x.size())
-        out = self.cnn1(x)
-        res = out
-        #print("conv1:", res.size())
-        #print("conv1:",out.size())
+        # Convolution 1
+        #x = x.contiguous().view(x.size(0), -1)
+        #Poojitha
+        #add 1 dimension for resnet : 3d to 4d
+        #out=normalize(x)
+
+        #print(x.size())
+
+        #x = torch.unsqueeze(x, 1)
+
+        #out = self.cnn1(x)
+        #print(out.size())
+
+        out = self.model(x)
+        '''out = self.cnn1(x)
+        out = self.relu(out)
+
         out = self.cnn2(out)
-        #print("conv2",out.size())
-        out += res
+        out = self.relu(out)
+
         out = self.cnn3(out)
-        res = out
+        out = self.relu(out)
+
         out = self.cnn4(out)
-        out += res
-        res = out
-        out = self.cnn5(out)
-        res = out
-        out += res
-
-        out = self.relu1(out)
-        res = out
-        out += res
-        out = self.relu2(out)
-        res = out
-        out += res
-        out = self.relu3(out)
-        res = out
-        out += res
-        out = self.relu4(out)
-
-        #res = self.downsample(out)
-        #out += res
-        #print("before vq-vae", out.size())
-
-       # print("shape after cnn2: ", out.size())
-
-        out = self.vq_vae(out)
-        #print("after vq-vae", out.size())
-
-        out = self.cnn6(out)
-
-        #print("after vq-vae",out.size())
-
-        #out = out.permute(1,0,2)
-        #out = out.permute(1,0,2)
-
-        out = self.wavenet_model1(out)
-
-        #res = out
-
-        out = self.wavenet_model2(out)
-
-        #out += res
-
-        out = self.relu5(out)
-
-        out = self.relu6(out)
-        #print("final sixe ====", out.size())
+        out = self.relu(out)'''
 
         out = out.contiguous().view(out.size(0), -1)
-        #print("final sixe ====", out.size())
 
         # Linear function (readout)
-        #out = self.fc1(out)
+        #print(out.size())
 
+        out = self.fc1(out)
         out = self.log_softmax(out)
 
         return out
+
+
 
 class Model(algorithm.Algorithm):
 
@@ -267,7 +138,7 @@ class Model(algorithm.Algorithm):
     self.input_dim = self.default_feature_shape[0] * self.default_feature_shape[1]
     self.input_dim = self.default_feature_shape[0]
     #print(" output dimension : ", self.output_dim)
-    print(" input dimension : ", self.input_dim)
+    #print(" input dimension : ", self.input_dim)
     # getting an object for the PyTorch Model class for Model Class
     # use CUDA if available
 
@@ -275,7 +146,7 @@ class Model(algorithm.Algorithm):
     # Turn it off as it leads to memory error
     #if torch.cuda.is_available(): self.pytorchmodel.cuda()
     #poojitha: call cnn model
-    self.pytorchmodel = WavenetModel()
+    self.pytorchmodel = ResModel()
 
 
      # Attributes for managing time budget
@@ -361,8 +232,6 @@ class Model(algorithm.Algorithm):
         try:
           x,y = sess.run(next_element)
           y = y.argmax()
-          #print("y: ", y)
-          #print("x: ", x)
           features.append(x)
           labels.append(y)
         except tf.errors.OutOfRangeError:
@@ -371,7 +240,6 @@ class Model(algorithm.Algorithm):
       features = torch.Tensor(features)
       labels = torch.Tensor(labels)
       dataset = data_utils.TensorDataset(features, labels)
-      #print("batch size===", self.batch_size)
       loader = data_utils.DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
     else:
       while True:
@@ -379,7 +247,8 @@ class Model(algorithm.Algorithm):
           x , _= sess.run(next_element)
           ######## Jinu part #############
           # Extract mfcc features from raw data for test samples
-          x = mfcc(np.ravel(x), sr=16000, n_mfcc=13)
+          #x = mfcc(x.flatten(), sr=16000, n_mfcc=13)
+          x = self.log_spectrogram(x.flatten(),sampling_rate=16000)
           #TODO: I suppose the data should be normalized
           ######## Jinu part #############
           features.append(x)
@@ -387,14 +256,12 @@ class Model(algorithm.Algorithm):
           break
       features = np.stack(features)
       features = torch.Tensor(features)
-      #print("This gets called!!")
       dataset = data_utils.TensorDataset(features)
-      #print("batch size===", self.batch_size)
       loader = data_utils.DataLoader(dataset, batch_size=self.batch_size )
     return loader
 
 
-  def input_function(self, dataset, is_training):
+  def input_function(self, dataset, is_training, return_raw=False):
     """Given `dataset` received by the method `self.train` or `self.test`,
     prepare input to feed to model function.
 
@@ -407,7 +274,11 @@ class Model(algorithm.Algorithm):
     """
 
     # Gives pairs of (example, label) i guess
-    dataset = dataset.map(lambda *x: (self.preprocess_tensor_4d(x[0]), x[1]))
+    # Gives pairs of (example, label) i guess
+    if return_raw is False:
+      dataset = dataset.map(lambda *x: (self.preprocess_tensor_4d(x[0]), x[1]))
+    else:
+      dataset = dataset.map(lambda *x: (x[0], x[1]))
 
     if is_training:
       # Shuffle input examples
@@ -447,7 +318,12 @@ class Model(algorithm.Algorithm):
     # in get_dataloader(), as that is what is called in test.
     features = []
     for i in range(self.batch_size):
-      features.append(mfcc(np.ravel(wav[i]), sr=16000, n_mfcc=13))
+      #feature = mfcc(wav[i].flatten(), sr=16000, n_mfcc=13)
+
+      feature = self.log_spectrogram(audio=wav[i].flatten(),sampling_rate=16000)
+      # Normalize mfcc features along each channel
+      #feature = sklearn.preprocessing.normalize(feature)
+      features.append(feature)
     features = np.stack(features)
     #TODO: I suppose the data should be normalized
     ################# Jinu part ############################
@@ -455,6 +331,27 @@ class Model(algorithm.Algorithm):
     #return images[:,0,:,:,:].transpose(0,3,1,2), np.argmax(labels, axis=1)
     #print("features size", len(features))
     return features, np.argmax(labels, axis=1)
+
+  def log_spectrogram(self, audio, sampling_rate, eps=1e-10):
+
+    #print("audio dimension: ",audio.shape)
+    log_spec = melspectrogram(audio,sampling_rate)
+    log_spec = sklearn.preprocessing.normalize(log_spec, axis=0)
+    #print("dimension of log spec:",log_spec.size)
+    image = Image.fromarray(log_spec.T,mode="RGB")
+    #print(image.size)
+    #image = np.array(image)
+    #image = image.reshape(0,3,1,2)
+    #print("image from spectrogram",image)
+    convert = transforms.ToTensor()
+    resize = transforms.Resize((224, 224)),
+    tfms = transforms.Compose([
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    image = convert(image)
+    image= tfms(image)
+    #print(image.size())
+    return image
 
 
   def trainloop(self, criterion, optimizer, dataset, steps):
@@ -488,11 +385,11 @@ class Model(algorithm.Algorithm):
 
       with open("input_train.txt","a") as f:
         f.write(str(labels))
-      #print("size while cqlling========= ",images.size())
       log_ps = self.pytorchmodel(images)
       loss = criterion(log_ps, labels)
       loss.backward()
       optimizer.step()
+      #scheduler.step()
 
 
 
@@ -520,7 +417,8 @@ class Model(algorithm.Algorithm):
       self.training_data_iterator = self.input_function(dataset, is_training=True)
       #Training loop inside
       criterion = nn.NLLLoss()
-      optimizer = torch.optim.Adam(self.pytorchmodel.parameters(), lr=1e-3)
+      optimizer = torch.optim.Adam(self.pytorchmodel.parameters(), lr=1e-2)
+      #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-3, last_epoch=-1)
       self.trainloop(criterion, optimizer, dataset, steps=steps_to_train)
       train_end = time.time()
 
@@ -548,7 +446,7 @@ class Model(algorithm.Algorithm):
          this many steps. Double it each time.
     """
     if not remaining_time_budget: # This is never true in the competition anyway
-      remaining_time_budget = 1200 # if no time limit is given, set to 20min
+      remaining_time_budget = 2400 # if no time limit is given, set to 20min
 
     if not self.estimated_time_per_step:
       steps_to_train = 10
@@ -580,11 +478,7 @@ class Model(algorithm.Algorithm):
               images = images.float()
             else:
               images = images.float()
-              #print("data size inside test loop",images.size())
             log_ps = self.pytorchmodel(images)
-            #for i in log_ps:
-              #print(i)
-            #print("#"*30)
             ps = torch.exp(log_ps)
             top_p, top_class = ps.topk(1, dim=1)
             preds.append(top_class.cpu().numpy())
